@@ -87,8 +87,8 @@ function value_getter( at_value, strict )
 // http://stackoverflow.com/a/32029704/3591273
 function fields2model( $elements, model, $key, $value, $json_encoded )
 {
-    model = nodel || {}; $key = key_getter( $key || 'name' ); $value = value_getter( $value || 'value' );
-    if ( arguments.length < 5 ) $json_encoded = 'json-encoded';
+    model = model || {}; $key = key_getter( $key || 'name' ); $value = value_getter( $value || 'value' );
+    if ( arguments.length < 5 ) $json_encoded = false;
     $elements.each(function( ){
         var $el = $(this), json_encoded = !!$json_encoded ? !!$el.attr($json_encoded) : false,
             type, key, value, k, i, o, n;
@@ -143,6 +143,7 @@ function fields2model( $elements, model, $key, $value, $json_encoded )
 return /*Serialiser = */{
      VERSION: '0.1.0'
     
+    ,prefixed: prefix_remover
     ,getKey: key_getter
     ,getValue: value_getter
     ,toModel: fields2model
