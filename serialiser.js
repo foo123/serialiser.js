@@ -1,8 +1,8 @@
 /**
 *  Serialiser.js
-*  Parse and serialise complex form fields into an object model
+*  Parse, serialise and url-encode/decode complex form fields to/from an object model
 *
-*  @version: 0.2.0
+*  @version: 0.3.0
 *  https://github.com/foo123/serialiser.js
 *
 **/
@@ -19,7 +19,11 @@ else
 }(this, 'Serialiser', function( undef ) {
 "use strict";
 
-var HAS = 'hasOwnProperty', toString = Object.prototype.toString, json_decode = JSON.parse,
+var HAS = 'hasOwnProperty', toString = Object.prototype.toString,
+    
+    json_encode = JSON.stringify, json_decode = JSON.parse,
+    url_encode = encodeURIComponent, url_decode = decodeURIComponent,
+    
     ATTR = 'getAttribute', SET_ATTR = 'setAttribute', HAS_ATTR = 'hasAttribute', DEL_ATTR = 'removeAttribute',
     CHECKED = 'checked', DISABLED = 'disabled', SELECTED = 'selected',
     NAME = 'name', TAG = 'tagName', TYPE = 'type', VAL = 'value', 
@@ -82,7 +86,11 @@ var HAS = 'hasOwnProperty', toString = Object.prototype.toString, json_decode = 
     dotted = function( key ) {
         //        convert indexes to properties     strip leading dots
         return key.replace(index_to_prop_re, '.$1').replace(leading_dots_re, '');
+    },
+    is_array = function( o ) {
+        return '[object Array]' === toString.call(o);
     }
+    //rbracket = /\[\s*\]$/
 ;
 
 function key_getter( at_key, prefix )
@@ -127,6 +135,7 @@ function value_getter( at_value, strict )
         });
 }
 
+// adapted from ModelView
 // http://stackoverflow.com/a/32029704/3591273
 function fields2model( $elements, model, $key, $value, $json_encoded, arrays_as_objects )
 {
@@ -146,7 +155,8 @@ function fields2model( $elements, model, $key, $value, $json_encoded, arrays_as_
             if ( !!value ) value = json_decode( value );
             else value = null;
         }
-        //is_dynamic_array = dynamic_array_re.test( key );
+        
+        var is_dynamic_array = dynamic_array_re.test( key );
         k = dotted( key ).split('.'); o = model;
         while ( k.length )
         {
@@ -155,7 +165,7 @@ function fields2model( $elements, model, $key, $value, $json_encoded, arrays_as_
             {
                 if ( !o[HAS]( i ) )
                 {
-                    if ( /*is_dynamic_array &&*/ 1 === k.length && !trim(k[0]).length ) // dynamic array, ie a[ b ][ c ][ ]
+                    if ( is_dynamic_array && 1 === k.length ) // dynamic array, ie a[ b ][ c ][ ]
                         o[ i ] = [ ];
                     else if ( !arrays_as_objects && numeric_re.test( k[0] ) ) // standard array, ie a[ b ][ c ][ n ]
                         o[ i ] = new Array( parseInt(k[0], 10)+1 );
@@ -171,12 +181,120 @@ function fields2model( $elements, model, $key, $value, $json_encoded, arrays_as_
             }
             else 
             {
-                if ( /*is_dynamic_array*/!trim(i).length ) o.push( value ); // dynamic array, i.e a[ b ][ c ][ ]
+                if ( is_dynamic_array ) o.push( value ); // dynamic array, i.e a[ b ][ c ][ ]
                 else o[ i ] = value; // i.e a[ b ][ c ][ k ]
             }
         }
     }
     return model;
+}
+function params2model( q, model, coerce, arrays_as_objects )
+{
+    model = model || {}; coerce = !!coerce;
+    arrays_as_objects = true === arrays_as_objects;
+    var coerce_types = { 'true':true, 'false':false, 'null':null, 'undefined':undefined }, 
+        params, p, key, value, o, k;
+
+    // Iterate over all name=value pairs.
+    params = q.replace(/%20|\+/g, ' ').split('&');
+    for (i=0,l=params.length; i<l; i++)
+    {
+        p = params[i].split( '=' );
+        // If key is more complex than 'foo', like 'a[]' or 'a[b][c]', split it
+        // into its component parts.
+        key = url_decode( p[0] );
+        value = p.length > 1 ? url_decode( p[1] ) : (coerce ? undefined : '');
+        // Coerce values.
+        if ( coerce )
+        {
+            value = value && !isNaN(value) && ((+value + '') === value)
+            ? +value                  // number
+            : ('undefined' === typeof value
+            ? undefined               // undefined
+            : (coerce_types[HAS][value]
+            ? coerce_types[value]     // true, false, null, undefined
+            : value));                // string
+        }
+        
+        var is_dynamic_array = dynamic_array_re.test( key );
+        key = dotted( key ).split('.'); o = model;
+        while ( key.length )
+        {
+            k = key.shift( );
+            if ( key.length ) 
+            {
+                if ( !o[HAS]( k ) )
+                {
+                    if ( is_dynamic_array && 1 === key.length ) // dynamic array, ie a[ b ][ c ][ ]
+                        o[ k ] = [ ];
+                    else if ( !arrays_as_objects && numeric_re.test( key[0] ) ) // standard array, ie a[ b ][ c ][ n ]
+                        o[ k ] = new Array( parseInt(key[0], 10)+1 );
+                    else // object, associative array, ie a[ b ][ c ][ k ]
+                        o[ k ] = { };
+                }
+                else if ( !arrays_as_objects && numeric_re.test( key[0] ) && (o[k].length <= (n=parseInt(key[0], 10))) )
+                {
+                    // adjust size if needed to already standard array
+                    o[ k ] = o[ k ].concat( new Array(n-o[k].length+1) );
+                }
+                o = o[ k ];
+            }
+            else 
+            {
+                if ( is_dynamic_array ) o.push( value ); // dynamic array, i.e a[ b ][ c ][ ]
+                else o[ k ] = value; // i.e a[ b ][ c ][ k ]
+            }
+        }
+    }
+    return model;
+}
+
+function append( q, k, v )
+{
+    if ( 'function' === typeof v ) v = v( );
+    q.push( url_encode( k ) + '=' + url_encode( null == v ? '' : v ) );
+}
+function build_params( q, o, key )
+{
+    var k, i, l;
+
+    if ( !!key )
+    {
+        
+        if ( is_array( o ) )
+        {
+            if ( dynamic_array_re.test( key ) ) /* dynamic array */
+                for (i=0,l=o.length; i<l; i++)
+                    append( q, key, o[i] );
+            else
+                for (i=0,l=o.length; i<l; i++)
+                    build_params( q, o[i], key + '[' + ('object' === typeof o[i] ? i : '') + ']' );
+        }
+        else if ( o && ('object' === typeof o) )
+        {
+            for (k in o) if ( o[HAS](k) ) build_params( q, o[k], key + '[' + k + ']' );
+        }
+        else
+        {
+            append( q, key, o );
+        }
+    }
+    else if ( is_array( o ) )
+    {
+        for (i=0,l=o.length; i<l; i++) append( q, o[i].name, o[i].value );
+    }
+    else if ( o && ('object' === typeof o) )
+    {
+        for (k in o) if ( o[HAS](k) ) build_params( q, o[k], key );
+    }
+    return q;
+}
+// adapted from https://github.com/knowledgecode/jquery-param
+function model2params( model, q, as_array )
+{
+    var params = build_params( q || [], model || {} );
+    if ( true !== as_array ) params = params.join('&').split('%20').join('+');
+    return params;
 }
 
 function pass( )
@@ -190,7 +308,7 @@ function fail( )
 
 // export it
 return /*Serialiser = */{
-     VERSION: '0.2.0'
+     VERSION: '0.3.0'
     
     // adapted from ModelView
     ,Type: {
@@ -295,12 +413,6 @@ return /*Serialiser = */{
             return new Function('value,key,model,index,model_key', 'return ('+expression+');');
         }
     }
-    ,Key: key_getter
-    ,Value: value_getter
-    
-    // adapted from ModelView
-    ,Model: fields2model
-    
     ,Typecast: function( model, types ) {
         if ( !!types )
         {
@@ -368,6 +480,13 @@ return /*Serialiser = */{
         }
         return ret;
     }
+    
+    ,Key: key_getter
+    ,Value: value_getter
+    
+    ,FieldsToModel: fields2model
+    ,ModelToParams: model2params
+    ,ParamsToModel: params2model
 };
 
 });
