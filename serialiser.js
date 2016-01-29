@@ -127,7 +127,7 @@ function value_getter( at_value, strict )
             if ( 'file' === type )
             {
                 // File or Blob object
-                return !el.files.length ? undef : el.files[0] || null;
+                return !el.files.length ? null : el.files;
             }
             else
             {
@@ -143,7 +143,7 @@ function value_getter( at_value, strict )
             if ( 'file' === type )
             {
                 // File or Blob object
-                return !el.files.length ? undef : el.files[0] || null;
+                return !el.files.length ? null : el.files;
             }
             else
             {
@@ -183,11 +183,26 @@ function fields2model( $elements, model, $key, $value, $json_encoded, arrays_as_
                 if ( !o[HAS]( i ) )
                 {
                     if ( is_dynamic_array && 1 === k.length ) // dynamic array, ie a[ b ][ c ][ ]
-                        o[ i ] = [ ];
+                    {
+                        if ( value instanceof FileList /*!!el.type && ('file' === el.type.toLowerCase())*/ )
+                        {
+                            // FileList is already array for file input fields
+                            o[ i ] = value;
+                            break;
+                        }
+                        else
+                        {
+                            o[ i ] = [ ];
+                        }
+                    }
                     else if ( !arrays_as_objects && numeric_re.test( k[0] ) ) // standard array, ie a[ b ][ c ][ n ]
+                    {
                         o[ i ] = new Array( parseInt(k[0], 10)+1 );
+                    }
                     else // object, associative array, ie a[ b ][ c ][ k ]
+                    {
                         o[ i ] = { };
+                    }
                 }
                 else if ( !arrays_as_objects && numeric_re.test( k[0] ) && (o[i].length <= (n=parseInt(k[0], 10))) )
                 {
@@ -327,12 +342,7 @@ function params2model( q, model, coerce, arrays_as_objects )
     return model;
 }
 
-function append( q, k, v )
-{
-    if ( 'function' === typeof v ) v = v( );
-    q.push( url_encode( k ) + '=' + url_encode( null == v ? '' : v ) );
-}
-function build_params( q, o, key )
+function traverse( q, o, add, key )
 {
     var k, i, l;
 
@@ -343,82 +353,81 @@ function build_params( q, o, key )
         {
             if ( dynamic_array_re.test( key ) ) /* dynamic array */
                 for (i=0,l=o.length; i<l; i++)
-                    append( q, key, o[i] );
+                    add( q, key, o[i] );
             else
                 for (i=0,l=o.length; i<l; i++)
-                    build_params( q, o[i], key + '[' + ('object' === typeof o[i] ? i : '') + ']' );
+                    traverse( q, o[i], add, key + '[' + ('object' === typeof o[i] ? i : '') + ']' );
+        }
+        else if ( o instanceof FileList )
+        {
+            for (i=0,l=o.length; i<l; i++)
+                add( q, key, o[i] );
+        }
+        else if ( o instanceof File || o instanceof Blob )
+        {
+                add( q, key, o );
         }
         else if ( o && ('object' === typeof o) )
         {
-            for (k in o) if ( o[HAS](k) ) build_params( q, o[k], key + '[' + k + ']' );
+            for (k in o) if ( o[HAS](k) ) traverse( q, o[k], add, key + '[' + k + ']' );
         }
         else
         {
-            append( q, key, o );
+            add( q, key, o );
         }
     }
     else if ( is_array( o ) )
     {
-        for (i=0,l=o.length; i<l; i++) append( q, o[i].name, o[i].value );
+        for (i=0,l=o.length; i<l; i++) add( q, o[i].name, o[i].value );
+    }
+    else if ( o instanceof FileList )
+    {
+        for (i=0,l=o.length; i<l; i++) add( q, key, o[i] );
+    }
+    else if ( o instanceof File || o instanceof Blob )
+    {
+            add( q, key, o );
     }
     else if ( o && ('object' === typeof o) )
     {
-        for (k in o) if ( o[HAS](k) ) build_params( q, o[k], key );
+        for (k in o) if ( o[HAS](k) ) traverse( q, o[k], add, k );
     }
     return q;
 }
 // adapted from https://github.com/knowledgecode/jquery-param
+function append_url( q, k, v )
+{
+    if ( 'function' === typeof v ) v = v( );
+    q.push( url_encode( k ) + '=' + url_encode( null == v ? '' : v ) );
+}
 function model2params( model, q, raw )
 {
-    var params = build_params( q || [], model || {} );
+    var params = traverse( q || [], model || {}, append_url );
     if ( true !== raw ) params = params.join('&').split('%20').join('+');
     return params;
 }
 function append_fd( fd, k, v )
 {
     if ( 'function' === typeof v ) v = v( );
-    fd.append( k, null == v ? '' : v );
+    if ( v instanceof FileList )
+    {
+        for (var i=0,l=v.length; i<l; i++)
+            fd.append( k, v[i], v[i].name );
+    }
+    else if ( v instanceof File )
+    {
+        fd.append( k, v, v.name );
+    }
+    else
+    {
+        fd.append( k, null == v ? '' : v );
+    }
 }
-function build_formdata( fd, o, key )
+function model2formdata( model, fd, formDataClass )
 {
-    var k, i, l;
-
-    if ( !!key )
-    {
-        
-        if ( is_array( o ) )
-        {
-            if ( dynamic_array_re.test( key ) ) /* dynamic array */
-                for (i=0,l=o.length; i<l; i++)
-                    append_fd( fd, key, o[i] );
-            else
-                for (i=0,l=o.length; i<l; i++)
-                    build_formdata( fd, o[i], key + '[' + ('object' === typeof o[i] ? i : '') + ']' );
-        }
-        else if ( o && ('object' === typeof o) )
-        {
-            for (k in o) if ( o[HAS](k) ) build_formdata( fd, o[k], key + '[' + k + ']' );
-        }
-        else
-        {
-            append_fd( fd, key, o );
-        }
-    }
-    else if ( is_array( o ) )
-    {
-        for (i=0,l=o.length; i<l; i++) append_fd( fd, o[i].name, o[i].value );
-    }
-    else if ( o && ('object' === typeof o) )
-    {
-        for (k in o) if ( o[HAS](k) ) build_formdata( fd, o[k], key );
-    }
-    return fd;
+    if ( null == formDataClass && ('undefined' !== typeof FormData) ) formDataClass = FormData;
+    return formDataClass && model instanceof formDataClass ? model : traverse( fd || new formDataClass( ), model || {}, append_fd );
 }
-function model2formdata( model, fd )
-{
-    return build_formdata( fd || new FormData( ), model || {} );
-}
-
 function model2json( model )
 {
     return json_encode( model || {} );
