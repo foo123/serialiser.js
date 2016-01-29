@@ -1,8 +1,8 @@
 /**
 *  Serialiser.js
-*  Parse, serialise and url-encode/decode complex form fields to/from an object model
+*  Parse, serialise and url-encode/decode complex form fields to/from an object model / FormData
 *
-*  @version: 0.3.0
+*  @version: 0.4.0
 *  https://github.com/foo123/serialiser.js
 *
 **/
@@ -188,6 +188,7 @@ function fields2model( $elements, model, $key, $value, $json_encoded, arrays_as_
     }
     return model;
 }
+
 function params2model( q, model, coerce, arrays_as_objects )
 {
     model = model || {}; coerce = !!coerce;
@@ -290,11 +291,60 @@ function build_params( q, o, key )
     return q;
 }
 // adapted from https://github.com/knowledgecode/jquery-param
-function model2params( model, q, as_array )
+function model2params( model, q, raw )
 {
     var params = build_params( q || [], model || {} );
-    if ( true !== as_array ) params = params.join('&').split('%20').join('+');
+    if ( true !== raw ) params = params.join('&').split('%20').join('+');
     return params;
+}
+function append_fd( fd, k, v )
+{
+    if ( 'function' === typeof v ) v = v( );
+    fd.append( k, null == v ? '' : v );
+}
+function build_formdata( fd, o, key )
+{
+    var k, i, l;
+
+    if ( !!key )
+    {
+        
+        if ( is_array( o ) )
+        {
+            if ( dynamic_array_re.test( key ) ) /* dynamic array */
+                for (i=0,l=o.length; i<l; i++)
+                    append_fd( fd, key, o[i] );
+            else
+                for (i=0,l=o.length; i<l; i++)
+                    build_formdata( fd, o[i], key + '[' + ('object' === typeof o[i] ? i : '') + ']' );
+        }
+        else if ( o && ('object' === typeof o) )
+        {
+            for (k in o) if ( o[HAS](k) ) build_formdata( fd, o[k], key + '[' + k + ']' );
+        }
+        else
+        {
+            append_fd( fd, key, o );
+        }
+    }
+    else if ( is_array( o ) )
+    {
+        for (i=0,l=o.length; i<l; i++) append_fd( fd, o[i].name, o[i].value );
+    }
+    else if ( o && ('object' === typeof o) )
+    {
+        for (k in o) if ( o[HAS](k) ) build_formdata( fd, o[k], key );
+    }
+    return fd;
+}
+function model2formdata( model, fd, raw )
+{
+    return build_formdata( fd || new FormData( ), model || {} );
+}
+
+function model2json( model )
+{
+    return json_encode( model || {} );
 }
 
 function pass( )
@@ -308,11 +358,11 @@ function fail( )
 
 // export it
 return /*Serialiser = */{
-     VERSION: '0.3.0'
+     VERSION        : '0.4.0'
     
     // adapted from ModelView
-    ,Type: {
-        COMPOSITE: function( ) {
+    ,Type           : {
+        COMPOSITE   : function( ) {
             var T = arguments;
             if ( T[ 0 ] && T[ 0 ].concat ) T = T[ 0 ];
             return function( v, k, o, i, vk ) {
@@ -321,13 +371,13 @@ return /*Serialiser = */{
                return v;
             };
         },
-        DEFAULT: function( defaultValue ) {  
+        DEFAULT     : function( defaultValue ) {  
             return function( v ) { 
                 if ( null == v || (('[object String]' === toString.call(v)) && !trim(v).length)  ) v = defaultValue;
                 return v;
             }; 
         },
-        BOOL: function( v ) { 
+        BOOL        : function( v ) { 
             // handle string representation of booleans as well
             if ( ('[object String]' === toString.call(v)) && v.length )
             {
@@ -336,26 +386,26 @@ return /*Serialiser = */{
             }
             return !!v; 
         },
-        INT: function( v ) { 
+        INT         : function( v ) { 
             return parseInt(v||0, 10)||0;
         },
-        FLOAT: function( v ) { 
+        FLOAT       : function( v ) { 
             return parseFloat(v||0, 10)||0;
         },
-        STR: function( v ) { 
+        STR         : function( v ) { 
             return String(v);
         },
-        MIN: function( m ) {  
+        MIN         : function( m ) {  
             return function( v ) {
                 return v < m ? m : v;
             };
         },
-        MAX: function( M ) {  
+        MAX         : function( M ) {  
             return function( v ) {
                 return v > M ? M : v;
             };
         },
-        CLAMP: function( m, M ) {  
+        CLAMP       : function( m, M ) {  
             if ( m > M ) { var tmp = M; M = m; m = tmp; }
             return function( v ) {
                 return v < m ? m : (v > M ? M : v);
@@ -363,57 +413,57 @@ return /*Serialiser = */{
         }
     }
     // adapted from ModelView
-    ,Validator: {
-        PASS: pass,
-        FAIL: fail,
-        NOT: function( V ) {
+    ,Validator      : {
+        PASS        : pass,
+        FAIL        : fail,
+        NOT         : function( V ) {
             return function( v, k, o, i, vk ) {
                 return !V( v, k, o, i, vk );
             };
         },
-        AND: function( V1, V2 ){
+        AND         : function( V1, V2 ){
             return function( v, k, o, i, vk ) {
                 return V1( v, k, o, i, vk ) && V2( v, k, o, i, vk );
             };
         },
-        EITHER: function( V1, V2 ) {
+        EITHER      : function( V1, V2 ) {
             return function( v, k, o, i, vk ) {
                 return V1( v, k, o, i, vk ) || V2( v, k, o, i, vk );
             };
         },
-        IIF: function( cond, if_v, else_v ) {
+        IIF         : function( cond, if_v, else_v ) {
             else_v = else_v || pass;
             return function( v, k, o, i, vk ) {
                 return !!cond( v, k, o, i, vk ) ? if_v( v, k, o, i, vk ) : else_v( v, k, o, i, vk );
             };
         },
-        REQUIRED: function( v ) {
+        REQUIRED    : function( v ) {
             var T = toString.call( v );
             return ('[object String]' == T) || ('[object Array]' == T) ? !!v.length : null != v;
         },
-        IS: function( field, value, strict ) {
+        IS          : function( field, value, strict ) {
             return true === strict
             ? function( v, k, o ){ return value === o[field]; }
             : function( v, k, o ){ return value == o[field]; }
             ;
         },
-        BETWEEN: function( m, M, strict ) {
+        BETWEEN     : function( m, M, strict ) {
             if ( m > M ) { var tmp=m; m=M; M=tmp; }
             return true === strict
             ? function( v ){ return v > m && v < M; }
             : function( v ) { return v >= m && v <= M; }
             ;
         },
-        MATCHES: function( pattern ) {
+        MATCHES     : function( pattern ) {
             return function( v ) {
                return pattern.test( v );
             };
         },
-        EXPRESSION: function( expression ) {
+        EXPRESSION  : function( expression ) {
             return new Function('value,key,model,index,model_key', 'return ('+expression+');');
         }
     }
-    ,Typecast: function( model, types ) {
+    ,Typecast       : function( model, types ) {
         if ( !!types )
         {
             for (var key in types)
@@ -437,7 +487,7 @@ return /*Serialiser = */{
         return model;
     }
     
-    ,Validate: function( model, validators, errors, base ) {
+    ,Validate       : function( model, validators, errors, base ) {
         var ret = true;
         base = base || '';
         if ( !!validators )
@@ -481,12 +531,14 @@ return /*Serialiser = */{
         return ret;
     }
     
-    ,Key: key_getter
-    ,Value: value_getter
+    ,Key                : key_getter
+    ,Value              : value_getter
     
-    ,FieldsToModel: fields2model
-    ,ModelToParams: model2params
-    ,ParamsToModel: params2model
+    ,fromFields         : fields2model
+    ,fromUrlEncoded     : params2model
+    ,toJSON             : model2json
+    ,toFormData         : model2formdata
+    ,toUrlEncoded       : model2params
 };
 
 });
