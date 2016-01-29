@@ -2,7 +2,7 @@
 *  Serialiser.js
 *  Parse, serialise and url-encode/decode complex form fields to/from an object model / FormData
 *
-*  @version: 0.4.0
+*  @version: 0.5.0
 *  https://github.com/foo123/serialiser.js
 *
 **/
@@ -22,6 +22,7 @@ else
 var HAS = 'hasOwnProperty', toString = Object.prototype.toString,
     
     json_encode = JSON.stringify, json_decode = JSON.parse,
+    base64_decode = atob, base64_encode = btoa,
     url_encode = encodeURIComponent, url_decode = decodeURIComponent,
     
     ATTR = 'getAttribute', SET_ATTR = 'setAttribute', HAS_ATTR = 'hasAttribute', DEL_ATTR = 'removeAttribute',
@@ -123,15 +124,31 @@ function value_getter( at_value, strict )
                 type = (el[ATTR]('type')||el[TAG]||'').toLowerCase( );
             
             // empty, non-selected, non-checked element, bypass
-            return ( (('checkbox' === type || 'radio' === type) && !el[CHECKED]) ||
-                ('select' === type && (!value.length || -1 === el[SELECTED_INDEX])) ||
-                (('text' === type || 'textarea' === type ) && !trim(value).length)
-            ) ? undef : value;
+            if ( 'file' === type )
+            {
+                // File or Blob object
+                return !el.files.length ? undef : el.files[0] || null;
+            }
+            else
+            {
+                return ( (('checkbox' === type || 'radio' === type) && !el[CHECKED]) ||
+                    ('select' === type && (!value.length || -1 === el[SELECTED_INDEX])) ||
+                    (('text' === type || 'textarea' === type ) && !trim(value).length)
+                ) ? undef : value;
+            }
         }
         : function( el ) {
             var value = ('value' === at_value ? get_val( el ) : el[ATTR]( at_value )) || '',
                 type = (el[ATTR]('type')||el[TAG]).toLowerCase( );
-            return (('checkbox' === type || 'radio' === type) && !el[CHECKED]) ? undef : value;
+            if ( 'file' === type )
+            {
+                // File or Blob object
+                return !el.files.length ? undef : el.files[0] || null;
+            }
+            else
+            {
+                return (('checkbox' === type || 'radio' === type) && !el[CHECKED]) ? undef : value;
+            }
         });
 }
 
@@ -142,7 +159,7 @@ function fields2model( $elements, model, $key, $value, $json_encoded, arrays_as_
     model = model || {}; $key = key_getter( $key || 'name' ); $value = value_getter( $value || 'value' );
     if ( arguments.length < 5 ) $json_encoded = false;
     arrays_as_objects = true === arrays_as_objects;
-    for(var e=0,len=$elements.length; e<len; e++)
+    for (var e=0,len=$elements.length; e<len; e++)
     {
         var el = $elements[e], key, value, k, i, o, n, is_dynamic_array = false,
             json_encoded = !!$json_encoded ? !!el[ATTR]($json_encoded) : false
@@ -187,6 +204,66 @@ function fields2model( $elements, model, $key, $value, $json_encoded, arrays_as_
         }
     }
     return model;
+}
+
+// http://stackoverflow.com/questions/4998908/convert-data-uri-to-file-then-append-to-formdata
+function datauri2blob( dataURI, mimeType )
+{
+    // convert base64/URLEncoded data component to raw binary data held in a string
+    var byteString, arrayBuffer, dataType, i, i0, n, j, p;
+    if ( 'data:' === dataURI.substr( 0, 5 ) )
+    {
+        if ( -1 < (p=dataUri.indexOf(';base64,')) )
+        {
+            // separate out the mime component
+            dataType = dataUri.slice( 5, p );
+            dataUri = dataUri.slice( p+8 );
+            byteString = base64_decode( dataUri );
+        }
+        else
+        {
+            // separate out the mime component
+            dataType = dataUri.slice( 5, p=dataUri.indexOf(',') );
+            dataUri = dataUri.slice( p+1 );
+            byteString = unescape( dataURI );
+        }
+        if ( null == mimeType ) mimeType = dataType;
+    }
+    else
+    {
+        byteString = dataURI;
+    }
+
+    // write the bytes of the string to a typed array
+    n = byteString.length;
+    arrayBuffer = new Uint8Array( n );
+    i0 = n & 15;
+    for (i=0; i<i0; i++)
+    {
+        arrayBuffer[ i ] = byteString.charCodeAt( i ) & 0xFF;
+    }
+    for (i=i0; i<n; i+=16)
+    {
+        // loop unrolling, ~ 16 x faster
+        j = i;
+        arrayBuffer[ j ] = byteString.charCodeAt( j++ ) & 0xFF;
+        arrayBuffer[ j ] = byteString.charCodeAt( j++ ) & 0xFF;
+        arrayBuffer[ j ] = byteString.charCodeAt( j++ ) & 0xFF;
+        arrayBuffer[ j ] = byteString.charCodeAt( j++ ) & 0xFF;
+        arrayBuffer[ j ] = byteString.charCodeAt( j++ ) & 0xFF;
+        arrayBuffer[ j ] = byteString.charCodeAt( j++ ) & 0xFF;
+        arrayBuffer[ j ] = byteString.charCodeAt( j++ ) & 0xFF;
+        arrayBuffer[ j ] = byteString.charCodeAt( j++ ) & 0xFF;
+        arrayBuffer[ j ] = byteString.charCodeAt( j++ ) & 0xFF;
+        arrayBuffer[ j ] = byteString.charCodeAt( j++ ) & 0xFF;
+        arrayBuffer[ j ] = byteString.charCodeAt( j++ ) & 0xFF;
+        arrayBuffer[ j ] = byteString.charCodeAt( j++ ) & 0xFF;
+        arrayBuffer[ j ] = byteString.charCodeAt( j++ ) & 0xFF;
+        arrayBuffer[ j ] = byteString.charCodeAt( j++ ) & 0xFF;
+        arrayBuffer[ j ] = byteString.charCodeAt( j++ ) & 0xFF;
+        arrayBuffer[ j ] = byteString.charCodeAt( j++ ) & 0xFF;
+    }
+    return new Blob( [arrayBuffer], {type:mimeType} );
 }
 
 function params2model( q, model, coerce, arrays_as_objects )
@@ -337,7 +414,7 @@ function build_formdata( fd, o, key )
     }
     return fd;
 }
-function model2formdata( model, fd, raw )
+function model2formdata( model, fd )
 {
     return build_formdata( fd || new FormData( ), model || {} );
 }
@@ -358,7 +435,7 @@ function fail( )
 
 // export it
 return /*Serialiser = */{
-     VERSION        : '0.4.0'
+     VERSION        : '0.5.0'
     
     // adapted from ModelView
     ,Type           : {
@@ -534,11 +611,12 @@ return /*Serialiser = */{
     ,Key                : key_getter
     ,Value              : value_getter
     
-    ,fromFields         : fields2model
-    ,fromUrlEncoded     : params2model
-    ,toJSON             : model2json
-    ,toFormData         : model2formdata
-    ,toUrlEncoded       : model2params
+    ,DataUriToBlob      : datauri2blob
+    ,FieldsToModel      : fields2model
+    ,UrlEncodedToModel  : params2model
+    ,ModelToJSON        : model2json
+    ,ModelToFormData    : model2formdata
+    ,ModelToUrlEncoded  : model2params
 };
 
 });
