@@ -68,11 +68,14 @@ var HAS = 'hasOwnProperty', toString = Object.prototype.toString,
     },
     get_val = function( el ) {
         if ( !el ) return;
-        switch( el[TAG].toLowerCase() )
+        var value_alt = null;
+        if ( el[HAS_ATTR]('data-alt-value') ) value_alt = el[ATTR]('data-alt-value');
+        switch( el[TAG].toLowerCase( ) )
         {
-            case 'textarea':case 'input': return el[VAL];
-            case 'select': return select_get( el );
-            default: return (TEXTC in el) ? el[TEXTC] : el[TEXT];
+            case 'input': return 'file' === el.type.toLowerCase( ) ? ((!!value_alt) && (null!=el[value_alt]) && el[value_alt].length ? el[value_alt] : (el.files.length ? el.files : null)) : ((!!value_alt) && (null!=el[value_alt]) ? el[value_alt] : el[VAL]);
+            case 'textarea':return (!!value_alt) && (null!=el[value_alt]) ? el[value_alt] : el[VAL];
+            case 'select': return (!!value_alt) && (null!=el[value_alt]) ? el[value_alt] : select_get( el );
+            default: return (!!value_alt) && (null!=el[value_alt]) ? el[value_alt] : ((TEXTC in el) ? el[TEXTC] : el[TEXT]);
         }
     },
     escaped_re = /[\-\[\]\/\{\}\(\)\*\+\?\.\\\^\$\|]/g, 
@@ -127,7 +130,7 @@ function value_getter( at_value, strict )
             if ( 'file' === type )
             {
                 // File or Blob object
-                return !el.files.length ? null : el.files;
+                return (!!value_alt) && (null!=el[value_alt]) && el[value_alt].length ? el[value_alt] : (el.files && el.files.length ? el.files : null);
             }
             else
             {
@@ -143,7 +146,7 @@ function value_getter( at_value, strict )
             if ( 'file' === type )
             {
                 // File or Blob object
-                return !el.files.length ? null : el.files;
+                return (!!value_alt) && (null!=el[value_alt]) && el[value_alt].length ? el[value_alt] : (el.files && el.files.length ? el.files : null);
             }
             else
             {
@@ -222,11 +225,11 @@ function fields2model( $elements, model, $key, $value, $json_encoded, arrays_as_
 }
 
 // http://stackoverflow.com/questions/4998908/convert-data-uri-to-file-then-append-to-formdata
-function datauri2blob( dataURI, mimeType )
+function datauri2blob( dataUri, mimeType )
 {
     // convert base64/URLEncoded data component to raw binary data held in a string
     var byteString, arrayBuffer, dataType, i, i0, n, j, p;
-    if ( 'data:' === dataURI.substr( 0, 5 ) )
+    if ( 'data:' === dataUri.substr( 0, 5 ) )
     {
         if ( -1 < (p=dataUri.indexOf(';base64,')) )
         {
@@ -240,13 +243,13 @@ function datauri2blob( dataURI, mimeType )
             // separate out the mime component
             dataType = dataUri.slice( 5, p=dataUri.indexOf(',') );
             dataUri = dataUri.slice( p+1 );
-            byteString = unescape( dataURI );
+            byteString = unescape( dataUri );
         }
         if ( null == mimeType ) mimeType = dataType;
     }
     else
     {
-        byteString = dataURI;
+        byteString = dataUri;
     }
 
     // write the bytes of the string to a typed array
