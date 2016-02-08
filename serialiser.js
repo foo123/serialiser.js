@@ -123,7 +123,8 @@ function value_getter( at_value, strict )
         ? at_value
         : (false !== strict
         ? function( el ) {
-            var value = ('value' === at_value ? get_val( el ) : el[ATTR]( at_value )) || '',
+            var value_alt = el[HAS_ATTR]('data-alt-value') ? el[ATTR]('data-alt-value') : null,
+                value = ('value' === at_value ? get_val( el ) : el[ATTR]( at_value )) || '',
                 type = (el[ATTR]('type')||el[TAG]||'').toLowerCase( );
             
             // empty, non-selected, non-checked element, bypass
@@ -141,7 +142,8 @@ function value_getter( at_value, strict )
             }
         }
         : function( el ) {
-            var value = ('value' === at_value ? get_val( el ) : el[ATTR]( at_value )) || '',
+            var value_alt = el[HAS_ATTR]('data-alt-value') ? el[ATTR]('data-alt-value') : null,
+                value = ('value' === at_value ? get_val( el ) : el[ATTR]( at_value )) || '',
                 type = (el[ATTR]('type')||el[TAG]).toLowerCase( );
             if ( 'file' === type )
             {
