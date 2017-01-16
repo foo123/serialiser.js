@@ -2,24 +2,28 @@
 *  Serialiser.js
 *  Parse, serialise and url-encode/decode complex form fields to/from an object model / FormData
 *
-*  @version: 0.5.0
+*  @version: 0.5.1
 *  https://github.com/foo123/serialiser.js
 *
 **/
-!function( root, name, factory ) {
+!function( root, name, factory ){
 "use strict";
-if ( 'object' === typeof exports )
-    // CommonJS module
-    module.exports = factory( );
-else if ( 'function' === typeof define && define.amd )
-    // AMD. Register as an anonymous module.
-    define(function( req ) { return factory( ); });
-else
-    root[name] = factory( );
-}(this, 'Serialiser', function( undef ) {
+if ( ('undefined'!==typeof Components)&&('object'===typeof Components.classes)&&('object'===typeof Components.classesByID)&&Components.utils&&('function'===typeof Components.utils['import']) ) /* XPCOM */
+    (root.$deps = root.$deps||{}) && (root.EXPORTED_SYMBOLS = [name]) && (root[name] = root.$deps[name] = factory.call(root));
+else if ( ('object'===typeof module)&&module.exports ) /* CommonJS */
+    (module.$deps = module.$deps||{}) && (module.exports = module.$deps[name] = factory.call(root));
+else if ( ('undefined'!==typeof System)&&('function'===typeof System.register)&&('function'===typeof System['import']) ) /* ES6 module */
+    System.register(name,[],function($__export){$__export(name, factory.call(root));});
+else if ( ('function'===typeof define)&&define.amd&&('function'===typeof require)&&('function'===typeof require.specified)&&require.specified(name) /*&& !require.defined(name)*/ ) /* AMD */
+    define(name,['module'],function(module){factory.moduleUri = module.uri; return factory.call(root);});
+else if ( !(name in root) ) /* Browser/WebWorker/.. */
+    (root[name] = factory.call(root)||1)&&('function'===typeof(define))&&define.amd&&define(function(){return root[name];} );
+}(  /* current root */          this, 
+    /* module name */           "Serialiser",
+    /* module factory */        function ModuleFactory__Serialiser( undef ){
 "use strict";
 
-var HAS = 'hasOwnProperty', toString = Object.prototype.toString,
+var HAS = Object.prototype.hasOwnProperty, toString = Object.prototype.toString,
     
     json_encode = JSON.stringify, json_decode = JSON.parse,
     base64_decode = atob, base64_encode = btoa,
@@ -185,7 +189,7 @@ function fields2model( $elements, model, $key, $value, $json_encoded, arrays_as_
             i = k.shift( );
             if ( k.length ) 
             {
-                if ( !o[HAS]( i ) )
+                if ( !HAS.call(o, i ) )
                 {
                     if ( is_dynamic_array && 1 === k.length ) // dynamic array, ie a[ b ][ c ][ ]
                     {
@@ -309,7 +313,7 @@ function params2model( q, model, coerce, arrays_as_objects )
             ? +value                  // number
             : ('undefined' === typeof value
             ? undefined               // undefined
-            : (coerce_types[HAS][value]
+            : (HAS.call(coerce_types,value)
             ? coerce_types[value]     // true, false, null, undefined
             : value));                // string
         }
@@ -321,7 +325,7 @@ function params2model( q, model, coerce, arrays_as_objects )
             k = key.shift( );
             if ( key.length ) 
             {
-                if ( !o[HAS]( k ) )
+                if ( !HAS.call(o, k ) )
                 {
                     if ( is_dynamic_array && 1 === key.length ) // dynamic array, ie a[ b ][ c ][ ]
                         o[ k ] = [ ];
@@ -395,7 +399,7 @@ function traverse( q, o, add, key )
     }
     else if ( o && ('object' === typeof o) )
     {
-        for (k in o) if ( o[HAS](k) ) traverse( q, o[k], add, k );
+        for (k in o) if ( HAS.call(o,k) ) traverse( q, o[k], add, k );
     }
     return q;
 }
@@ -449,7 +453,7 @@ function fail( )
 
 // export it
 return /*Serialiser = */{
-     VERSION        : '0.5.0'
+     VERSION        : '0.5.1'
     
     // adapted from ModelView
     ,Type           : {
@@ -550,8 +554,15 @@ return /*Serialiser = */{
                return pattern.test( v );
             };
         },
-        EXPRESSION  : function( expression ) {
-            return new Function('value,key,model,index,model_key', 'return ('+expression+');');
+        EXPRESSION  : function( expression, SYMBOL ) {
+            SYMBOL = SYMBOL || {};
+            return new Function([
+                String(SYMBOL['value'] || 'value'),
+                String(SYMBOL['key'] || 'key'),
+                String(SYMBOL['model'] || 'model'),
+                String(SYMBOL['index'] || 'index'),
+                String(SYMBOL['model_key'] || (String(SYMBOL['model'] || 'model')+'_key'))
+            ].join(','), 'return ('+expression+');');
         }
     }
     ,Typecast       : function( model, types ) {
@@ -559,11 +570,11 @@ return /*Serialiser = */{
         {
             for (var key in types)
             {
-                if ( !types[HAS](key) ) continue;
+                if ( !HAS.call(types,key) ) continue;
                 var T=  types[key];
                 if ( '[object Array]' === toString.call( T ) )
                 {
-                    if ( model[HAS](key) )
+                    if ( HAS.call(model,key) )
                     {
                         var k, m = model[key], n = m.length, T = T[0];
                         for (k=0; k<n; k++) m[k] = T( m[k], key, model, k, m );
@@ -585,11 +596,11 @@ return /*Serialiser = */{
         {
             for (var key in validators)
             {
-                if ( !validators[HAS](key) ) continue;
+                if ( !HAS.call(validators,key) ) continue;
                 var V = validators[key];
                 if ( '[object Array]' === toString.call( V[0] ) )
                 {
-                    if ( model[HAS](key) )
+                    if ( HAS.call(model,key) )
                     {
                         var v = V[0][0], k, m = model[key], n = m.length, e = new Array(n),
                             invalid = false, v_err = V[1];
